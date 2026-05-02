@@ -1,0 +1,314 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RepositoryProvider {
+  github
+  local
+}
+
+enum RepositoryStatus {
+  pending
+  indexing
+  indexed
+  failed
+}
+
+enum FileRole {
+  route
+  component
+  schema
+  config
+  utility
+  test
+  api_endpoint
+  type_file
+  entry_point
+  unknown
+}
+
+enum SymbolKind {
+  function
+  class
+  interface
+  type
+  enum
+  component
+  route
+  schema_model
+  variable
+  constant
+}
+
+enum TypeDefinitionKind {
+  interface
+  type
+  class
+  enum
+  schema_model
+}
+
+enum RouteKind {
+  page
+  layout
+  route_handler
+  server_action
+  api_route
+}
+
+enum ExplanationTargetType {
+  file
+  symbol
+  route
+  schema_model
+  selected_lines
+}
+
+model User {
+  id            String       @id
+  name          String
+  email         String       @unique
+  emailVerified Boolean      @default(false)
+  image         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  repositories  Repository[]
+  questions     Question[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String   @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+model Repository {
+  id             String             @id @default(cuid())
+  userId         String?
+  user           User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  owner          String
+  name           String
+  provider       RepositoryProvider
+  defaultBranch  String?
+  cloneUrl       String?
+  sourcePath     String?
+  indexedAt      DateTime?
+  status         RepositoryStatus   @default(pending)
+  statusMessage  String?            @db.Text
+  detectedStack  Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  files          RepoFile[]
+  symbols        CodeSymbol[]
+  typeDefinitions TypeDefinition[]
+  importEdges    ImportEdge[]
+  callEdges      CallEdge[]
+  routes         Route[]
+  explanations   ExplanationCache[]
+  questions      Question[]
+
+  @@index([userId])
+  @@index([provider, owner, name])
+  @@map("repositories")
+}
+
+model RepoFile {
+  id            String       @id @default(cuid())
+  repositoryId  String
+  repository    Repository   @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  path          String
+  language      String?
+  content       String       @db.Text
+  contentHash   String
+  size          Int
+  role          FileRole     @default(unknown)
+  summary       String?      @db.Text
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  symbols       CodeSymbol[]
+  typeDefinitions TypeDefinition[]
+  importsFrom   ImportEdge[] @relation("ImportFromFile")
+  importsTo     ImportEdge[] @relation("ImportToFile")
+  routes        Route[]
+
+  @@unique([repositoryId, path])
+  @@index([repositoryId, role])
+  @@map("repo_files")
+}
+
+model CodeSymbol {
+  id              String       @id @default(cuid())
+  repositoryId    String
+  repository      Repository   @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  fileId          String
+  file            RepoFile     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  name            String
+  kind            SymbolKind
+  startLine       Int
+  endLine         Int
+  signature       String?      @db.Text
+  exported        Boolean      @default(false)
+  async           Boolean      @default(false)
+  docComment      String?      @db.Text
+  inferredPurpose String?      @db.Text
+  typeDefinitions TypeDefinition[]
+  callerEdges     CallEdge[]   @relation("CallerSymbol")
+  calleeEdges     CallEdge[]   @relation("CalleeSymbol")
+
+  @@index([repositoryId, name])
+  @@index([fileId])
+  @@map("symbols")
+}
+
+model TypeDefinition {
+  id            String             @id @default(cuid())
+  repositoryId  String
+  repository    Repository         @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  fileId        String
+  file          RepoFile           @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  symbolId      String?
+  symbol        CodeSymbol?        @relation(fields: [symbolId], references: [id], onDelete: SetNull)
+  name          String
+  kind          TypeDefinitionKind
+  rawDefinition String             @db.Text
+  startLine     Int
+  endLine       Int
+
+  @@index([repositoryId, name])
+  @@index([fileId])
+  @@map("type_definitions")
+}
+
+model ImportEdge {
+  id            String     @id @default(cuid())
+  repositoryId  String
+  repository    Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  fromFileId    String
+  fromFile      RepoFile   @relation("ImportFromFile", fields: [fromFileId], references: [id], onDelete: Cascade)
+  toFileId      String?
+  toFile        RepoFile?  @relation("ImportToFile", fields: [toFileId], references: [id], onDelete: SetNull)
+  importPath    String
+  importedNames Json
+  isExternal    Boolean    @default(false)
+
+  @@index([repositoryId])
+  @@index([fromFileId])
+  @@index([toFileId])
+  @@map("import_edges")
+}
+
+model CallEdge {
+  id             String      @id @default(cuid())
+  repositoryId   String
+  repository     Repository  @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  callerSymbolId String
+  callerSymbol   CodeSymbol  @relation("CallerSymbol", fields: [callerSymbolId], references: [id], onDelete: Cascade)
+  calleeSymbolId String?
+  calleeSymbol   CodeSymbol? @relation("CalleeSymbol", fields: [calleeSymbolId], references: [id], onDelete: SetNull)
+  calleeName     String
+  confidence     Float       @default(0.5)
+
+  @@index([repositoryId])
+  @@index([callerSymbolId])
+  @@index([calleeSymbolId])
+  @@map("call_edges")
+}
+
+model Route {
+  id           String     @id @default(cuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  fileId       String
+  file         RepoFile   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  framework    String
+  routePath    String
+  method       String?
+  kind         RouteKind
+
+  @@index([repositoryId, routePath])
+  @@index([fileId])
+  @@map("routes")
+}
+
+model ExplanationCache {
+  id            String                @id @default(cuid())
+  repositoryId  String
+  repository    Repository            @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  targetType    ExplanationTargetType
+  targetId      String
+  promptVersion String
+  content       String                @db.Text
+  citations     Json?
+  createdAt     DateTime              @default(now())
+
+  @@index([repositoryId, targetType, targetId])
+  @@map("explanation_cache")
+}
+
+model Question {
+  id           String     @id @default(cuid())
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  question     String     @db.Text
+  answer       String     @db.Text
+  citedFiles   Json
+  createdAt    DateTime   @default(now())
+
+  @@index([repositoryId])
+  @@index([userId])
+  @@map("questions")
+}
