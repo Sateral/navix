@@ -1,7 +1,21 @@
 import { z } from "zod";
 import { publicProcedure, router } from "@/server/trpc/init";
+import { importRepository } from "@/server/services/indexing-service";
 
 export const repoRouter = router({
+  import: publicProcedure
+    .input(
+      z.object({
+        sourceType: z.enum(["local", "github"]),
+        source: z.string().min(1),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      return importRepository({
+        ...input,
+        userId: ctx.session?.user.id,
+      });
+    }),
   list: publicProcedure.query(async ({ ctx }) => {
     return ctx.prisma.repository.findMany({
       orderBy: { updatedAt: "desc" },
