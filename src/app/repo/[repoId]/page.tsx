@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ChevronDown, GitBranch, Search, ShieldQuestion } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CodeViewer } from "@/components/repo/code-viewer";
+import { ExplainFileButton } from "@/components/repo/explain-file-button";
 import { FileInspector } from "@/components/repo/file-inspector";
 import { FileTree } from "@/components/repo/file-tree";
 import { QuestionBox } from "@/components/repo/question-box";
@@ -122,11 +123,14 @@ export default async function RepositoryWorkspacePage({ params, searchParams }: 
 
           <section className="flex min-w-0 flex-col gap-3">
             {selectedFile ? (
-              <CodeViewer
-                content={selectedFile.content}
-                language={selectedFile.language}
-                path={selectedFile.path}
-              />
+              <>
+                <CodeViewer
+                  content={selectedFile.content}
+                  language={selectedFile.language}
+                  path={selectedFile.path}
+                />
+                <ExplainFileButton repositoryId={repository.id} fileId={selectedFile.id} />
+              </>
             ) : (
               <div className="grid min-h-[34rem] place-items-center rounded-lg border border-white/10 bg-slate-950/65 text-sm text-slate-500">
                 No indexed files available.
