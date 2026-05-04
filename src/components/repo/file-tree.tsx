@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { ChevronRight, FileCode2, Folder } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, FileCode2, Folder, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 type FileTreeFile = {
@@ -24,7 +27,24 @@ export function FileTree({
   files: FileTreeFile[];
   selectedFileId?: string;
 }) {
-  const root = buildTree(files);
+  const root = useMemo(() => buildTree(files), [files]);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() =>
+    getSelectedFileAncestorPaths(files, selectedFileId),
+  );
+
+  const togglePath = useCallback((path: string) => {
+    setExpandedPaths((current) => {
+      const next = new Set(current);
+
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+
+      return next;
+    });
+  }, []);
 
   return (
     <div className="h-full overflow-auto p-3">
@@ -39,6 +59,8 @@ export function FileTree({
             node={node}
             repoId={repoId}
             selectedFileId={selectedFileId}
+            expandedPaths={expandedPaths}
+            onTogglePath={togglePath}
           />
         ))}
       </div>
@@ -50,11 +72,15 @@ function TreeBranch({
   node,
   repoId,
   selectedFileId,
+  expandedPaths,
+  onTogglePath,
   depth = 0,
 }: {
   node: TreeNode;
   repoId: string;
   selectedFileId?: string;
+  expandedPaths: Set<string>;
+  onTogglePath: (path: string) => void;
   depth?: number;
 }) {
   if (node.file) {
@@ -75,25 +101,36 @@ function TreeBranch({
     );
   }
 
+  const expanded = expandedPaths.has(node.path);
+  const ChevronIcon = expanded ? ChevronDown : ChevronRight;
+  const FolderIcon = expanded ? FolderOpen : Folder;
+
   return (
     <div>
-      <div
-        className="flex h-8 items-center gap-2 px-2 text-sm text-slate-300"
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? "Collapse" : "Expand"} ${node.name}`}
+        className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm text-slate-300 transition hover:bg-white/[0.05] hover:text-white"
+        onClick={() => onTogglePath(node.path)}
         style={{ paddingLeft: `${depth * 14 + 8}px` }}
       >
-        <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
-        <Folder className="h-3.5 w-3.5 text-slate-500" />
+        <ChevronIcon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+        <FolderIcon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
         <span className="truncate">{node.name}</span>
-      </div>
-      {[...node.children.values()].map((child) => (
-        <TreeBranch
-          key={child.path}
-          node={child}
-          repoId={repoId}
-          selectedFileId={selectedFileId}
-          depth={depth + 1}
-        />
-      ))}
+      </button>
+      {expanded &&
+        [...node.children.values()].map((child) => (
+          <TreeBranch
+            key={child.path}
+            node={child}
+            repoId={repoId}
+            selectedFileId={selectedFileId}
+            expandedPaths={expandedPaths}
+            onTogglePath={onTogglePath}
+            depth={depth + 1}
+          />
+        ))}
     </div>
   );
 }
@@ -133,4 +170,21 @@ function buildTree(files: FileTreeFile[]) {
   }
 
   return root;
+}
+
+function getSelectedFileAncestorPaths(files: FileTreeFile[], selectedFileId?: string) {
+  const selectedFile = files.find((file) => file.id === selectedFileId);
+
+  if (!selectedFile) {
+    return new Set<string>();
+  }
+
+  const parts = selectedFile.path.split("/");
+  const ancestorPaths = new Set<string>();
+
+  for (let index = 0; index < parts.length - 1; index++) {
+    ancestorPaths.add(parts.slice(0, index + 1).join("/"));
+  }
+
+  return ancestorPaths;
 }
